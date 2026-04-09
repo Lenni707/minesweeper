@@ -16,6 +16,8 @@ const CELL_SIZE: usize = 20;
 
 const NUM_BOMBS: i32 = ((GRID_HEIGHT as f32 * GRID_WIDTH as f32) * 0.3) as i32;
 
+const SEED: u64 = 12345;
+
 struct World {
     grid: Vec<Vec<Cell>>,
     cell_size: usize,
@@ -101,7 +103,7 @@ fn window_conf() -> Conf {
 
 #[macroquad::main(window_conf)]
 async fn main() {
-    let rng = StdRng::seed_from_u64(123);
+    let rng = StdRng::seed_from_u64(SEED);
     let grid = World::new(rng);
     loop {
         draw(&grid);
