@@ -2,22 +2,21 @@ use macroquad::prelude::*;
 use ::rand::{RngExt, SeedableRng, rngs::StdRng};
 
 // --- TODO ---
-// - Code dick optimieren (vorallem loops, weil ich durch vieles einfach viel zu oft looper)
-// actually playable machen (clickable und das man felder aufdeckt)
-// maybe cell sache rewritten
-// jede mine muss mindesten ein number feld als nachbarn haben
-// generell mit dem design diesmal mühe geben
+// menu and win + loose animation
+// option to reset
+// timer
 
-const GRID_WIDTH: usize = 30;
-const GRID_HEIGHT: usize = 30;
+const GRID_WIDTH: usize = 20;
+const GRID_HEIGHT: usize = 20;
 const CELL_SIZE: usize = 40;
 
-const NUM_BOMBS: i32 = ((GRID_HEIGHT as f32 * GRID_WIDTH as f32) * 0.3) as i32;
+const NUM_BOMBS: i32 = ((GRID_HEIGHT as f32 * GRID_WIDTH as f32) * 0.25) as i32;
 
-const SEED: u64 = 12345;
+const SEED: u64 = 676767;
 
 struct Assets {
     bomb: Texture2D,
+    flag: Texture2D,
 }
 
 impl Assets {
@@ -34,6 +33,7 @@ impl Assets {
 
         Self {
             bomb,
+            flag
         }
     }
 }
@@ -42,7 +42,8 @@ struct World {
     grid: Vec<Vec<Cell>>,
     cell_size: usize,
     generated: bool,
-    rng: StdRng
+    rng: StdRng,
+    num_flags: u32,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -69,13 +70,14 @@ impl World {
     fn new() -> Self {
         let empty_grid = vec![vec![Cell::new(CellType::Empty); GRID_WIDTH]; GRID_HEIGHT];
 
-        World { grid: empty_grid, cell_size: CELL_SIZE, generated: false, rng: StdRng::seed_from_u64(SEED) }
+        World { grid: empty_grid, cell_size: CELL_SIZE, generated: false, rng: StdRng::seed_from_u64(SEED), num_flags: 0 }
     }
     fn generate(&mut self, safe_x: usize, safe_y: usize) {
+        let num_neighbouring_tiles_that_are_also_safe = 2; // normally 1
         // get the exluded cells from the first click
         let mut excluded = std::collections::HashSet::new();
-        for dy in -1..=1isize {
-            for dx in -1..=1isize {
+        for dy in -num_neighbouring_tiles_that_are_also_safe..=num_neighbouring_tiles_that_are_also_safe {
+            for dx in -num_neighbouring_tiles_that_are_also_safe..=num_neighbouring_tiles_that_are_also_safe {
                 let nx = safe_x as isize + dx;
                 let ny = safe_y as isize + dy;
                 if is_in_bounds(nx, ny) {
@@ -138,13 +140,47 @@ fn world_to_grid(world_x: f32, world_y: f32) -> Option<(usize, usize)> {
         let gx = (world_x / CELL_SIZE as f32) as isize;
         let gy = (world_y / CELL_SIZE as f32) as isize;
         is_in_bounds(gx, gy).then_some((gx as usize, gy as usize))
+}
+
+fn flood_fill(grid: &mut Vec<Vec<Cell>>, start_x: usize, start_y: usize) {
+    let mut queue = std::collections::VecDeque::new();
+    queue.push_back((start_x, start_y));
+
+    while let Some((x, y)) = queue.pop_front() {
+        let cell = &mut grid[y][x];
+
+        // skip if already revealed or flagged
+        if cell.revealed || cell.flagged {
+            continue;
+        }
+
+        cell.revealed = true;
+
+        // only spread further from empty cells
+        // number cells reveal themselves but don't propagate
+        if cell.kind != CellType::Empty {
+            continue;
+        }
+
+        // push all valid neighbors
+        for dy in -1..=1isize {
+            for dx in -1..=1isize {
+                if dx == 0 && dy == 0 { continue; }
+                let nx = x as isize + dx;
+                let ny = y as isize + dy;
+                if is_in_bounds(nx, ny) {
+                    queue.push_back((nx as usize, ny as usize));
+                }
+            }
+        }
     }
+}
 
 fn window_conf() -> Conf {
     Conf {
         window_title: "Minesweeper".to_owned(),
-        window_width: (GRID_WIDTH * CELL_SIZE) as i32,
-        window_height: (GRID_HEIGHT * CELL_SIZE) as i32,
+        window_width: (((GRID_WIDTH * CELL_SIZE) as f32) * 1.5) as i32, // hahah dieses * 1.5 ist so dumm aber sosnt ist es zu klein idk wieso
+        window_height: (((GRID_HEIGHT * CELL_SIZE) as f32) * 1.5) as i32,
         ..Default::default()
     }
 }
@@ -171,18 +207,37 @@ fn handle_mouse(world: &mut World) {
             } else {
                 match world.grid[gy][gx].kind {
                     CellType::Mine => { panic!("you lost hahahah") },
-                    CellType::Empty => { world.grid[gy][gx].revealed = true },
+                    CellType::Empty => { flood_fill(&mut world.grid, gx, gy) },
                     CellType::Number(_) => { world.grid[gy][gx].revealed = true },
                 }
             }
         }
     }
+    if is_mouse_button_pressed(MouseButton::Right) {
+        let (mx, my) = mouse_position();
+        if let Some((gx, gy)) = world_to_grid(mx, my) {
+            // world.grid[gy][gx].flagged = !world.grid[gy][gx].flagged; so viel cooler
+            if world.grid[gy][gx].revealed {
+                return
+            }
+
+            if world.grid[gy][gx].flagged {
+                world.grid[gy][gx].flagged = false;
+                world.num_flags -= 1;                
+            } else {
+                world.grid[gy][gx].flagged = true;
+                world.num_flags += 1;  
+            }
+        }
+    }
 }
 
-fn draw(grid: &World, assets: &Assets) {
+fn draw(world: &World, assets: &Assets) {
     clear_background(GRAY);
-    draw_cells(grid, assets);
-    draw_grid_lines(grid);
+    draw_cells(world, assets);
+    draw_grid_lines(world);
+
+    draw_text(&(NUM_BOMBS - world.num_flags as i32).to_string(), 10., 40., 40., WHITE); // show num bombs
 }
 
 fn draw_grid_lines(grid: &World) {
@@ -212,7 +267,16 @@ fn draw_cells(grid: &World, assets: &Assets) {
                 draw_rectangle(x_pos, y_pos, size, size, DARKGRAY);
                 if cell.flagged {
                     // draw flag indicator on top
-                    draw_rectangle(x_pos + size*0.3, y_pos + size*0.1, size*0.4, size*0.8, BLUE);
+                    draw_texture_ex(
+                        &assets.flag,
+                        x_pos,
+                        y_pos,
+                        WHITE,
+                        DrawTextureParams {
+                            dest_size: Some(vec2(grid.cell_size as f32, grid.cell_size as f32)), // integer scale
+                            ..Default::default()
+                        },
+                    );
                 }
                 continue;
             }
