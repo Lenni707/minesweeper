@@ -1,13 +1,13 @@
 use macroquad::prelude::*;
-use ::rand::{RngExt, SeedableRng, random, random_range, rngs::StdRng};
+use ::rand::{RngExt, SeedableRng, random_range, rngs::StdRng};
 
 // --- TODO ---
 // menu and win + loose animation
 // option to reset
 // timer
 
-const GRID_WIDTH: usize = 20;
-const GRID_HEIGHT: usize = 20;
+const GRID_WIDTH: usize = 15;
+const GRID_HEIGHT: usize = 15;
 const CELL_SIZE: usize = 40;
 
 const NUM_BOMBS: i32 = ((GRID_HEIGHT as f32 * GRID_WIDTH as f32) * 0.25) as i32;
@@ -123,8 +123,10 @@ impl Assets {
 
 fn start_menu(world: &mut World) -> Scene {
     clear_background(BLACK);
-    draw_text("Press space to start", 100.0, 100.0, 40.0, WHITE);
-    draw_text("Press R any time to reset the game", 100.0, 80.0, 40.0, WHITE);
+    draw_text("Press space to start", 50.0, 130.0, (GRID_HEIGHT * 2) as f32, WHITE);
+    draw_text("Press R at any time to reset the game", 50.0, 160.0, (GRID_HEIGHT * 2) as f32, WHITE);
+    draw_text("Left click to reveal a tile and ", 50.0, 210.0, (GRID_HEIGHT * 2) as f32, WHITE);
+    draw_text("right click to mark a tile with a flag", 50.0, 240.0, (GRID_HEIGHT * 2) as f32, WHITE);
 
     if is_key_pressed(KeyCode::Space) {
         *world = World::new(random_range(0..99999));
@@ -142,14 +144,6 @@ fn play_game(world: &mut World, assets: &Assets) -> Scene {
             return Scene::StartMenu;
     }
 
-    if world.revealed {
-        draw_text("You lost LLLL, press enter to restart", (GRID_WIDTH * CELL_SIZE) as f32 / 2.5, (GRID_HEIGHT * CELL_SIZE) as f32 / 2.5, 80.0, RED);
-
-        if is_key_pressed(KeyCode::Enter) {
-            return Scene::StartMenu;
-        }
-    }
-
     Scene::Game
 }
 
@@ -163,7 +157,7 @@ fn handle_mouse(world: &mut World) {
         if let Some((gx, gy)) = world_to_grid(mx, my) {
             if !world.generated {
                 world.generate(gx, gy);
-            } else {
+            } else if !world.grid[gy][gx].flagged {
                 match world.grid[gy][gx].kind {
                     CellType::Mine => { reveal(world); },
                     CellType::Empty => { flood_fill(&mut world.grid, gx, gy) },
@@ -200,11 +194,11 @@ fn draw(world: &World, assets: &Assets) {
         &format!("Bombs remaining: {}", NUM_BOMBS - world.num_flags as i32),
         10.,
         33.,
-        40.,
+        (GRID_HEIGHT * 2) as f32,
         WHITE,
     );
 
-    draw_text(&format!("Seed: {}", world.seed), 10., 70., 40., WHITE);
+    draw_text(&format!("Seed: {}", world.seed), 10., 70., (GRID_HEIGHT * 2) as f32, WHITE);
 }
 
 fn draw_cells(grid: &World, assets: &Assets) {
