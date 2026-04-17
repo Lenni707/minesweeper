@@ -39,6 +39,8 @@ struct World {
     rng: StdRng,
     seed: u64,
     num_flags: u32,
+    amt_numbers: u32,
+    amt_revelead_numbers: u32,
 }
 
 struct Assets {
@@ -58,7 +60,7 @@ impl World {
     fn new(seed: u64) -> Self {
         let empty_grid = vec![vec![Cell::new(CellType::Empty); GRID_WIDTH]; GRID_HEIGHT];
 
-        World { grid: empty_grid, cell_size: CELL_SIZE, generated: false, revealed: false, rng: StdRng::seed_from_u64(seed), seed, num_flags: 0 }
+        World { grid: empty_grid, cell_size: CELL_SIZE, generated: false, revealed: false, rng: StdRng::seed_from_u64(seed), seed, num_flags: 0, amt_numbers: 0, amt_revelead_numbers: 0  }
     }
 
     fn generate(&mut self, safe_x: usize, safe_y: usize) {
@@ -85,14 +87,17 @@ impl World {
             }
         }
 
+        let mut count_nums = 0;
         for y in 0..GRID_HEIGHT {
             for x in 0..GRID_WIDTH {
                 let n = get_num_neighbor_mines(&self.grid, x, y);
                 if self.grid[y][x].kind == CellType::Empty && n > 0 {
                     self.grid[y][x].kind = CellType::Number(n);
+                    count_nums += 1
                 }
             }
         }
+        self.amt_numbers = count_nums;
 
         self.generated = true;
     }
@@ -144,6 +149,10 @@ fn play_game(world: &mut World, assets: &Assets) -> Scene {
             return Scene::StartMenu;
     }
 
+    if  world.amt_revelead_numbers == world.amt_numbers { // check if 
+
+    }
+
     Scene::Game
 }
 
@@ -161,7 +170,7 @@ fn handle_mouse(world: &mut World) {
                 match world.grid[gy][gx].kind {
                     CellType::Mine => { reveal(world); },
                     CellType::Empty => { flood_fill(&mut world.grid, gx, gy) },
-                    CellType::Number(_) => { world.grid[gy][gx].revealed = true },
+                    CellType::Number(_) => { world.grid[gy][gx].revealed = true; world.amt_revelead_numbers += 1 },
                 }
             }
         }
