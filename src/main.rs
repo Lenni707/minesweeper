@@ -1,14 +1,10 @@
 use macroquad::prelude::*;
-use ::rand::{RngExt, SeedableRng, random_range, rngs::StdRng};
-
-// --- TODO ---
-// menu and win + loose animation
-// option to reset
-// timer
 
 const GRID_WIDTH: usize = 15;
 const GRID_HEIGHT: usize = 15;
 const CELL_SIZE: usize = 40;
+const GRID_OFFSET_X: f32 = 0.0;
+const GRID_OFFSET_Y: f32 = 80.0;
 
 const NUM_BOMBS: i32 = ((GRID_HEIGHT as f32 * GRID_WIDTH as f32) * 0.25) as i32;
 
@@ -31,12 +27,11 @@ struct Cell {
     flagged: bool
 }
 
-struct World {
+ struct World {
     grid: Vec<Vec<Cell>>,
     cell_size: usize,
     generated: bool,
     revealed: bool,
-    rng: StdRng,
     seed: u64,
     num_flags: u32,
     amt_numbers: u32,
@@ -59,8 +54,8 @@ impl Cell {
 impl World {
     fn new(seed: u64) -> Self {
         let empty_grid = vec![vec![Cell::new(CellType::Empty); GRID_WIDTH]; GRID_HEIGHT];
-
-        World { grid: empty_grid, cell_size: CELL_SIZE, generated: false, revealed: false, rng: StdRng::seed_from_u64(seed), seed, num_flags: 0, amt_numbers: 0, amt_revelead_numbers: 0  }
+        rand::srand(seed);
+        World { grid: empty_grid, cell_size: CELL_SIZE, generated: false, revealed: false, seed, num_flags: 0, amt_numbers: 0, amt_revelead_numbers: 0  }
     }
 
     fn generate(&mut self, safe_x: usize, safe_y: usize) {
@@ -79,8 +74,8 @@ impl World {
 
         let mut count = 0;
         while count < NUM_BOMBS {
-            let x = self.rng.random_range(0..GRID_WIDTH);
-            let y = self.rng.random_range(0..GRID_HEIGHT);
+            let x = rand::gen_range(0, GRID_WIDTH);
+            let y = rand::gen_range(0, GRID_HEIGHT);
             if self.grid[y][x].kind == CellType::Empty && !excluded.contains(&(x, y)) {
                 self.grid[y][x].kind = CellType::Mine;
                 count += 1;
@@ -104,25 +99,28 @@ impl World {
 }
 
 impl Assets {
-    async fn load() -> Self {
-        let bomb = load_texture("assets/sprites_png/bomb.png").await.unwrap();
+    async fn load() -> Result<Self, String> {
+        let bomb = load_texture("assets/sprites_png/bomb.png")
+            .await
+            .map_err(|e| format!("Failed to load bomb.png: {:?}", e))?;
         bomb.set_filter(FilterMode::Nearest);
         
-        let flag = load_texture("assets/sprites_png/flag.png").await.unwrap();
+        let flag = load_texture("assets/sprites_png/flag.png")
+            .await
+            .map_err(|e| format!("Failed to load flag.png: {:?}", e))?;
         flag.set_filter(FilterMode::Nearest);
 
-        let flag_wrong = load_texture("assets/sprites_png/flag_wrong.png").await.unwrap();
+        let flag_wrong = load_texture("assets/sprites_png/flag_wrong.png")
+            .await
+            .map_err(|e| format!("Failed to load flag_wrong.png: {:?}", e))?;
         flag_wrong.set_filter(FilterMode::Nearest);
 
-        let flag_correct = load_texture("assets/sprites_png/flag_correc_green.png").await.unwrap();
+        let flag_correct = load_texture("assets/sprites_png/flag_correc_green.png")
+            .await
+            .map_err(|e| format!("Failed to load flag_correct.png: {:?}", e))?;
         flag_correct.set_filter(FilterMode::Nearest);
 
-        Self {
-            bomb,
-            flag,
-            flag_wrong,
-            flag_correct,
-        }
+        Ok(Self { bomb, flag, flag_wrong, flag_correct })
     }
 }
 
@@ -134,7 +132,7 @@ fn start_menu(world: &mut World) -> Scene {
     draw_text("right click to mark a tile with a flag", 50.0, 240.0, (GRID_HEIGHT * 2) as f32, WHITE);
 
     if is_key_pressed(KeyCode::Space) {
-        *world = World::new(random_range(0..99999));
+        *world = World::new(rand::gen_range(0, 99999));
         return Scene::Game;
     }
 
@@ -214,8 +212,8 @@ fn draw_cells(grid: &World, assets: &Assets) {
     for y in 0..GRID_HEIGHT {
         for x in 0..GRID_WIDTH {
             let cell = grid.grid[y][x];
-            let x_pos = (x * grid.cell_size) as f32;
-            let y_pos = (y * grid.cell_size) as f32;
+            let x_pos = (x * grid.cell_size) as f32 + GRID_OFFSET_X;
+            let y_pos = (y * grid.cell_size) as f32 + GRID_OFFSET_Y;
             let size = grid.cell_size as f32;
 
             if !cell.revealed {
@@ -286,12 +284,12 @@ fn draw_grid_lines(grid: &World) {
 
     for x in 0..=GRID_WIDTH {
         let x_pos = x * grid.cell_size;
-        draw_line(x_pos as f32, 0., x_pos as f32, height as f32, 1.0, WHITE);
+        draw_line(x_pos as f32 + GRID_OFFSET_X, GRID_OFFSET_Y, x_pos as f32 + GRID_OFFSET_X, height as f32 + GRID_OFFSET_Y, 1.0, WHITE);
     }
 
     for y in 0..=GRID_HEIGHT {
         let y_pos = y * grid.cell_size;
-        draw_line(0., y_pos as f32, width as f32, y_pos as f32, 1.0, WHITE);
+        draw_line(GRID_OFFSET_X, y_pos as f32 + GRID_OFFSET_Y, width as f32 + GRID_OFFSET_X, y_pos as f32 + GRID_OFFSET_Y, 1.0, WHITE);
     }
 }
 
@@ -357,8 +355,8 @@ fn get_num_neighbor_mines(grid: &Vec<Vec<Cell>>, x: usize, y: usize) -> u32 {
 }
 
 fn world_to_grid(world_x: f32, world_y: f32) -> Option<(usize, usize)> {
-    let gx = (world_x / CELL_SIZE as f32) as isize;
-    let gy = (world_y / CELL_SIZE as f32) as isize;
+    let gx = ((world_x - GRID_OFFSET_X) / CELL_SIZE as f32) as isize;
+    let gy = ((world_y - GRID_OFFSET_Y) / CELL_SIZE as f32) as isize;
     is_in_bounds(gx, gy).then_some((gx as usize, gy as usize))
 }
 
@@ -369,17 +367,23 @@ fn is_in_bounds(x: isize, y: isize) -> bool {
 fn window_conf() -> Conf {
     Conf {
         window_title: "Minesweeper".to_owned(),
-        window_width: (((GRID_WIDTH * CELL_SIZE) as f32) * 1.5) as i32,
-        window_height: (((GRID_HEIGHT * CELL_SIZE) as f32) * 1.5) as i32,
+        window_width: (((GRID_WIDTH * CELL_SIZE) as f32 + GRID_OFFSET_X * 2.0) * 1.5) as i32,
+        window_height: (((GRID_HEIGHT * CELL_SIZE) as f32 + GRID_OFFSET_Y + GRID_OFFSET_X) * 1.5) as i32,
         ..Default::default()
     }
 }
 
 #[macroquad::main(window_conf)] 
 async fn main() {
-    let seed: u64 = random_range(0..99999);
+    let seed: u64 = rand::gen_range(0, 99999);
     let mut world = World::new(seed);
-    let assets = Assets::load().await;
+    let assets = match Assets::load().await {
+        Ok(a) => a,
+        Err(err) => {
+            eprintln!("{}", err); 
+            panic!("{}", err);
+        }
+    };
     let mut scene = Scene::StartMenu;
 
     loop {
