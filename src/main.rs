@@ -436,7 +436,6 @@ fn window_conf() -> Conf {
         window_title: "Minesweeper".to_owned(),
         window_width: (((GRID_WIDTH * CELL_SIZE) as f32 + GRID_OFFSET_X * 2.0) * 1.) as i32,
         window_height: (((GRID_HEIGHT * CELL_SIZE) as f32 + GRID_OFFSET_Y + GRID_OFFSET_X) * 1.) as i32,
-        high_dpi: true,
         ..Default::default()
     }
 }
