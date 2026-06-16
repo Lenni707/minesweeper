@@ -6,11 +6,13 @@ const CELL_SIZE: usize = 40;
 const GRID_OFFSET_X: f32 = 0.0;
 const GRID_OFFSET_Y: f32 = 80.0;
 
-const NUM_BOMBS: i32 = ((GRID_HEIGHT as f32 * GRID_WIDTH as f32) * 0.25) as i32;
+const NUM_BOMBS: i32 = ((GRID_HEIGHT as f32 * GRID_WIDTH as f32) * 0.25).round() as i32;
 
 enum Scene {
     StartMenu,
     Game,
+    WinScreen,
+    LooseScreen
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -124,12 +126,37 @@ impl Assets {
     }
 }
 
+fn draw_centered_text(text: &str, y: f32, font_size: f32, color: Color) {
+    let dimensions = measure_text(text, None, font_size as u16, 1.0);
+    let x = (screen_width() - dimensions.width) / 2.0;
+    draw_text(text, x, y, font_size, color);
+}
+
+fn check_win(world: &World) -> bool {
+    for y in 0..GRID_HEIGHT {
+        for x in 0..GRID_WIDTH {
+            let cell = &world.grid[y][x];
+            if cell.kind != CellType::Mine && !cell.revealed {
+                return false;
+            }
+        }
+    }
+    true
+}
+
 fn start_menu(world: &mut World) -> Scene {
-    clear_background(BLACK);
-    draw_text("Press space to start", 50.0, 130.0, (GRID_HEIGHT * 2) as f32, WHITE);
-    draw_text("Press R at any time to reset the game", 50.0, 160.0, (GRID_HEIGHT * 2) as f32, WHITE);
-    draw_text("Left click to reveal a tile and ", 50.0, 210.0, (GRID_HEIGHT * 2) as f32, WHITE);
-    draw_text("right click to mark a tile with a flag", 50.0, 240.0, (GRID_HEIGHT * 2) as f32, WHITE);
+    clear_background(Color::from_rgba(20, 20, 25, 255));
+
+    draw_centered_text("MINESWEEPER", 180.0, 50.0, ORANGE);
+    
+    draw_centered_text("Controls", 300.0, 30.0, LIGHTGRAY);
+    draw_centered_text("Left Click: Reveal tile", 350.0, 24.0, WHITE);
+    draw_centered_text("Right Click: Toggle flag", 390.0, 24.0, WHITE);
+    draw_centered_text("R Key: Reset game", 430.0, 24.0, WHITE);
+    
+    let pulse = (get_time() * 3.0).sin() as f32;
+    let start_color = if pulse > 0.0 { WHITE } else { GRAY };
+    draw_centered_text("Press SPACE to start", 550.0, 28.0, start_color);
 
     if is_key_pressed(KeyCode::Space) {
         *world = World::new(rand::gen_range(0, 99999));
@@ -140,23 +167,60 @@ fn start_menu(world: &mut World) -> Scene {
 }
 
 fn play_game(world: &mut World, assets: &Assets) -> Scene {
-    handle_mouse(world);
+    let next_scene = handle_mouse(world);
     draw(world, assets);
 
-    if is_key_pressed(KeyCode::R) { // reset game
-            return Scene::StartMenu;
+    if let Some(scene) = next_scene {
+        return scene;
     }
 
-    if  world.amt_revelead_numbers == world.amt_numbers { // check if 
+    if is_key_pressed(KeyCode::R) {
+        return Scene::StartMenu;
+    }
 
+    if check_win(world) {
+        return Scene::WinScreen;
     }
 
     Scene::Game
 }
 
-fn handle_mouse(world: &mut World) {
+fn win_menu(world: &mut World, assets: &Assets) -> Scene {
+    draw(world, assets);
+
+    draw_rectangle(0.0, 0.0, screen_width(), screen_height(), Color::new(0.0, 0.0, 0.0, 0.7));
+
+    draw_centered_text("VICTORY!", screen_height() / 2.0 - 40.0, 60.0, GREEN);
+    draw_centered_text("You cleared all mines!", screen_height() / 2.0 + 20.0, 24.0, WHITE);
+    draw_centered_text("Press R to start a new game", screen_height() / 2.0 + 70.0, 24.0, LIGHTGRAY);
+
+    if is_key_pressed(KeyCode::R) {
+        return Scene::StartMenu;
+    }
+
+    Scene::WinScreen
+}
+
+fn loose_menu(world: &mut World, assets: &Assets) -> Scene {
+    reveal(world);
+    draw(world, assets);
+
+    draw_rectangle(0.0, 0.0, screen_width(), screen_height(), Color::new(0.0, 0.0, 0.0, 0.2));
+
+    draw_centered_text("GAME OVER", screen_height() / 2.0 - 40.0, 60.0, RED);
+    draw_centered_text("You stepped on a mine!", screen_height() / 2.0 + 20.0, 24.0, WHITE);
+    draw_centered_text("Press R to start a new game", screen_height() / 2.0 + 70.0, 24.0, LIGHTGRAY);
+
+    if is_key_pressed(KeyCode::R) {
+        return Scene::StartMenu;
+    }
+
+    Scene::LooseScreen
+}
+
+fn handle_mouse(world: &mut World) -> Option<Scene> { // for handling on a loose
     if world.revealed {
-        return
+        return None;
     }
 
     if is_mouse_button_pressed(MouseButton::Left) {
@@ -164,10 +228,11 @@ fn handle_mouse(world: &mut World) {
         if let Some((gx, gy)) = world_to_grid(mx, my) {
             if !world.generated {
                 world.generate(gx, gy);
+                flood_fill(&mut world.grid, gx, gy);
             } else if !world.grid[gy][gx].flagged {
                 match world.grid[gy][gx].kind {
-                    CellType::Mine => { reveal(world); },
-                    CellType::Empty => { flood_fill(&mut world.grid, gx, gy) },
+                    CellType::Mine => { return Some(Scene::LooseScreen) },
+                    CellType::Empty => { flood_fill(&mut world.grid, gx, gy);  },
                     CellType::Number(_) => { world.grid[gy][gx].revealed = true; world.amt_revelead_numbers += 1 },
                 }
             }
@@ -178,7 +243,7 @@ fn handle_mouse(world: &mut World) {
         let (mx, my) = mouse_position();
         if let Some((gx, gy)) = world_to_grid(mx, my) {
             if world.grid[gy][gx].revealed {
-                return
+                return None
             }
 
             if world.grid[gy][gx].flagged {
@@ -190,6 +255,8 @@ fn handle_mouse(world: &mut World) {
             }
         }
     }
+
+    None
 }
 
 fn draw(world: &World, assets: &Assets) {
@@ -367,8 +434,8 @@ fn is_in_bounds(x: isize, y: isize) -> bool {
 fn window_conf() -> Conf {
     Conf {
         window_title: "Minesweeper".to_owned(),
-        window_width: (((GRID_WIDTH * CELL_SIZE) as f32 + GRID_OFFSET_X * 2.0) * 1.5) as i32,
-        window_height: (((GRID_HEIGHT * CELL_SIZE) as f32 + GRID_OFFSET_Y + GRID_OFFSET_X) * 1.5) as i32,
+        window_width: (((GRID_WIDTH * CELL_SIZE) as f32 + GRID_OFFSET_X * 2.0) * 1.) as i32,
+        window_height: (((GRID_HEIGHT * CELL_SIZE) as f32 + GRID_OFFSET_Y + GRID_OFFSET_X) * 1.) as i32,
         ..Default::default()
     }
 }
@@ -390,6 +457,8 @@ async fn main() {
         scene = match scene {
             Scene::StartMenu => start_menu(&mut world),
             Scene::Game => play_game(&mut world, &assets),
+            Scene::WinScreen => win_menu(&mut world, &assets),
+            Scene::LooseScreen => loose_menu(&mut world, &assets)
         };
         next_frame().await
     }
